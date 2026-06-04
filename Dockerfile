@@ -1,20 +1,31 @@
-FROM python:3.13.5-slim
+# Dockerfile
+# --------------------------------------------------------------------------
+# This tells Hugging Face how to build and run your app.
+# The key extra step is installing "tesseract-ocr", the engine that reads
+# text out of images and scanned PDFs.
+# --------------------------------------------------------------------------
 
-WORKDIR /app
+# Start from a small Python image.
+FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    git \
+# Install the OCR engine (system software, not a Python package).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
-COPY src/ ./src/
+# Folder where the app lives inside the container.
+WORKDIR /app
+ENV HOME=/app
 
-RUN pip3 install -r requirements.txt
+# Install the Python packages first (this layer is cached for faster rebuilds).
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy the rest of the app's files.
+COPY . .
+
+# Streamlit serves on port 8501.
 EXPOSE 8501
 
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
-
-ENTRYPOINT ["streamlit", "run", "src/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Start the app.
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
