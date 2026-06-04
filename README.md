@@ -1,19 +1,34 @@
 ---
-title: Ai Notes Generator
-emoji: 🚀
-colorFrom: red
-colorTo: red
-sdk: docker
-app_port: 8501
-tags:
-- streamlit
+title: AI Notes Generator
+emoji: 📝
+colorFrom: blue
+colorTo: purple
+sdk: streamlit
+app_file: app.py
 pinned: false
-short_description: Streamlit template space
 ---
 
-# Welcome to Streamlit!
+# 📝 AI Notes Generator
 
-Edit `/src/streamlit_app.py` to customize this app to your heart's desire. :heart:
+Upload a PowerPoint (.pptx) file and turn it into study notes, summaries,
+exam questions, and MCQs, using a free AI model hosted on Hugging Face.
 
-If you have any questions, checkout our [documentation](https://docs.streamlit.io) and [community
-forums](https://discuss.streamlit.io).
+## Files
+- `app.py` – the Streamlit interface (the Space runs this)
+- `agent.py` – decides file type and which AI task to run
+- `pptx_extractor.py` – reads text from .pptx slides
+- `ai_engine.py` – calls the hosted Hugging Face model
+- `prompts.py` – the prompts sent to the AI
+- `requirements.txt` – Python packages
+
+## Important
+This Space needs a **Secret** named `HF_TOKEN` (your Hugging Face access
+token with inference permission). Set it in:
+Settings → Variables and secrets → New secret.
+
+## Run locally (optional)
+```
+pip install -r requirements.txt
+set HF_TOKEN=your_token_here   # Windows PowerShell:  $env:HF_TOKEN="your_token_here"
+streamlit run app.py
+```
