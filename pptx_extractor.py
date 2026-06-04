@@ -1,10 +1,10 @@
 # pptx_extractor.py
 # --------------------------------------------------------------------------
-# This file is responsible for ONE job: reading text out of a PowerPoint
-# (.pptx) file. It uses the python-pptx library.
+# This file reads text out of a PowerPoint (.pptx) file, one slide at a time.
+# It uses the python-pptx library.
 #
 # IMPORTANT: python-pptx can only read the NEWER .pptx format.
-# It CANNOT read the old .ppt format. We handle that politely elsewhere.
+# It CANNOT read the old .ppt format.
 # --------------------------------------------------------------------------
 
 import io
@@ -20,9 +20,8 @@ def extract_text_from_pptx(file_bytes: bytes) -> list:
 
     Returns:
         A list of dictionaries, one per slide, like:
-        [{"slide_number": 1, "text": "..."}, {"slide_number": 2, "text": "..."}]
+        [{"number": 1, "text": "..."}, {"number": 2, "text": "..."}]
     """
-    # Wrap the raw bytes in a file-like object so python-pptx can open it.
     presentation = Presentation(io.BytesIO(file_bytes))
 
     slides_data = []
@@ -48,24 +47,9 @@ def extract_text_from_pptx(file_bytes: bytes) -> list:
                     if row_text:
                         lines.append(row_text)
 
-        # Join all the pieces of this slide into one block of text.
-        slide_text = "\n".join(lines)
-
         slides_data.append({
-            "slide_number": slide_number,
-            "text": slide_text,
+            "number": slide_number,
+            "text": "\n".join(lines),
         })
 
     return slides_data
-
-
-def combine_slides_text(slides_data: list) -> str:
-    """
-    Turn the list of slide dictionaries into ONE big string.
-    This combined string is what we feed to the AI.
-    """
-    parts = []
-    for slide in slides_data:
-        if slide["text"]:
-            parts.append(f"--- Slide {slide['slide_number']} ---\n{slide['text']}")
-    return "\n\n".join(parts)
