@@ -1,14 +1,19 @@
-# app.py  (Hugging Face hosted version)
+# app.py  (Hugging Face hosted version - now supports PPTX and PDF)
 # --------------------------------------------------------------------------
-# This is the MAIN file the Space runs. Same app as before, but the AI now
-# runs on Hugging Face's servers instead of local Ollama.
+# This is the MAIN file the Space runs. It builds the Streamlit interface
+# and ties everything together. The AI runs on Hugging Face's servers.
 # --------------------------------------------------------------------------
 
 import streamlit as st
 
 # Import our own helper files.
-from agent import is_supported, detect_file_type, run_task, TASK_TO_PROMPT
-from pptx_extractor import extract_text_from_pptx, combine_slides_text
+from agent import (
+    is_supported,
+    detect_file_type,
+    extract_content,
+    run_task,
+    TASK_TO_PROMPT,
+)
 from ai_engine import is_ai_ready, MODEL_NAME
 
 
@@ -17,14 +22,14 @@ from ai_engine import is_ai_ready, MODEL_NAME
 st.set_page_config(page_title="AI Notes Generator", page_icon="📝")
 st.title("📝 AI Notes Generator")
 st.write(
-    "Upload a PowerPoint (.pptx) file and turn it into study notes, "
+    "Upload a PowerPoint (.pptx) or PDF file and turn it into study notes, "
     "summaries, exam questions, or MCQs, all powered by a free AI model."
 )
 
-# Streamlit re-runs the whole script on every click. To remember things
-# (like extracted text and generated results) we use st.session_state.
-if "slide_text" not in st.session_state:
-    st.session_state.slide_text = ""
+# Streamlit re-runs the whole script on every click, so we use session_state
+# to remember things across re-runs.
+if "content_text" not in st.session_state:
+    st.session_state.content_text = ""
 if "result" not in st.session_state:
     st.session_state.result = ""
 if "result_label" not in st.session_state:
@@ -49,13 +54,13 @@ with st.sidebar:
 # ----------------------------- FILE UPLOAD -------------------------------
 
 uploaded_file = st.file_uploader(
-    "Upload your PowerPoint file",
-    type=["pptx", "ppt"],   # the picker shows these, but we validate again below
+    "Upload your file (.pptx or .pdf)",
+    type=["pptx", "pdf", "ppt"],   # .ppt is allowed so we can show a helpful message
 )
 
-# ERROR CASE 1: No file uploaded yet. Stop here politely.
+# ERROR CASE 1: No file uploaded yet.
 if uploaded_file is None:
-    st.info("👆 Please upload a .pptx file to get started.")
+    st.info("👆 Please upload a .pptx or .pdf file to get started.")
     st.stop()
 
 # ERROR CASE 2: Unsupported file type (e.g. the old .ppt format).
@@ -63,7 +68,7 @@ if not is_supported(uploaded_file.name):
     file_type = detect_file_type(uploaded_file.name)
     st.error(
         f"Sorry, the file type '{file_type}' is not supported. "
-        "This app can only read the newer **.pptx** format.\n\n"
+        "This app can read **.pptx** (PowerPoint) and **.pdf** files.\n\n"
         "If you have an old **.ppt** file, open it in PowerPoint or "
         "Google Slides and save it as **.pptx**, then upload again."
     )
@@ -74,37 +79,38 @@ if not is_supported(uploaded_file.name):
 
 try:
     file_bytes = uploaded_file.getvalue()
-    slides_data = extract_text_from_pptx(file_bytes)
-    combined_text = combine_slides_text(slides_data)
+    # The agent decides which extractor to use based on the file type.
+    items, combined_text, label = extract_content(uploaded_file.name, file_bytes)
 except Exception as error:
     st.error(
-        "Something went wrong while reading the PowerPoint file. "
-        "It may be corrupted or not a real .pptx file.\n\n"
+        "Something went wrong while reading the file. "
+        "It may be corrupted or not a real .pptx / .pdf file.\n\n"
         f"Technical detail: {error}"
     )
     st.stop()
 
-# ERROR CASE 3: The file opened fine but every slide was empty.
+# ERROR CASE 3: The file opened fine but contained no readable text.
 if not combined_text.strip():
     st.warning(
         "We opened the file but found **no readable text**. "
-        "The slides may contain only images. Try a file that has text."
+        "It may contain only images or be a scanned document. "
+        "Try a file that has real text."
     )
     st.stop()
 
-st.session_state.slide_text = combined_text
-st.success(f"✅ Extracted text from {len(slides_data)} slide(s).")
+st.session_state.content_text = combined_text
+st.success(f"✅ Extracted text from {len(items)} {label.lower()}(s).")
 
 
 # --------------------------- SHOW EXTRACTED TEXT -------------------------
 
-with st.expander("🔍 View extracted slide text"):
-    for slide in slides_data:
-        st.markdown(f"**Slide {slide['slide_number']}**")
-        if slide["text"]:
-            st.write(slide["text"])
+with st.expander(f"🔍 View extracted {label.lower()} text"):
+    for item in items:
+        st.markdown(f"**{label} {item['number']}**")
+        if item["text"]:
+            st.write(item["text"])
         else:
-            st.caption("(no text on this slide)")
+            st.caption(f"(no text on this {label.lower()})")
         st.divider()
 
 
@@ -124,7 +130,6 @@ generate_clicked = st.button("🚀 Generate", type="primary")
 # ----------------------------- RUN THE AGENT -----------------------------
 
 if generate_clicked:
-    # Re-check the token right before we use it.
     ready, error = is_ai_ready()
     if not ready:
         st.error(
@@ -133,10 +138,9 @@ if generate_clicked:
         )
         st.stop()
 
-    # ERROR CASE 4 + 5: AI request might fail for many reasons.
     try:
         with st.spinner(f"Generating {task_name}... this can take a moment."):
-            result = run_task(task_name, st.session_state.slide_text)
+            result = run_task(task_name, st.session_state.content_text)
 
         st.session_state.result = result
         st.session_state.result_label = task_name
