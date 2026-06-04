@@ -3,32 +3,35 @@ title: AI Notes Generator
 emoji: 📝
 colorFrom: blue
 colorTo: purple
-sdk: streamlit
-app_file: app.py
+sdk: docker
+app_port: 8501
 pinned: false
 ---
 
 # 📝 AI Notes Generator
 
-Upload a PowerPoint (.pptx) file and turn it into study notes, summaries,
-exam questions, and MCQs, using a free AI model hosted on Hugging Face.
+Upload a PowerPoint (.pptx), PDF, or image file and turn it into study
+notes, summaries, exam questions, or solved case scenarios. Scanned files
+and pictures are read automatically using OCR (Tesseract). The AI runs on a
+free model hosted by Hugging Face.
 
-## Files
-- `app.py` – the Streamlit interface (the Space runs this)
-- `agent.py` – decides file type and which AI task to run
-- `pptx_extractor.py` – reads text from .pptx slides
-- `ai_engine.py` – calls the hosted Hugging Face model
-- `prompts.py` – the prompts sent to the AI
-- `requirements.txt` – Python packages
+## How it runs
+This Space uses the **Docker** SDK so it can install the OCR engine.
+The `Dockerfile` installs `tesseract-ocr` and starts the Streamlit app.
 
-## Important
-This Space needs a **Secret** named `HF_TOKEN` (your Hugging Face access
-token with inference permission). Set it in:
+## Required secret
+Add a secret named `HF_TOKEN` (your Hugging Face access token with the
+"Make calls to Inference Providers" permission) in:
 Settings → Variables and secrets → New secret.
 
-## Run locally (optional)
-```
-pip install -r requirements.txt
-set HF_TOKEN=your_token_here   # Windows PowerShell:  $env:HF_TOKEN="your_token_here"
-streamlit run app.py
-```
+## Files
+- `app.py` – the Streamlit interface
+- `agent.py` – decides which reader and AI task to use
+- `pptx_extractor.py` – reads PowerPoint text (and OCRs pictures)
+- `pdf_extractor.py` – reads PDF text (and OCRs scanned pages)
+- `image_extractor.py` – OCRs uploaded images
+- `ocr.py` – shared OCR helper
+- `ai_engine.py` – calls the hosted AI model
+- `prompts.py` – the prompts sent to the AI
+- `requirements.txt` – Python packages
+- `Dockerfile` – build instructions (installs OCR)
