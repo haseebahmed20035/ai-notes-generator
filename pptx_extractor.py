@@ -1,22 +1,63 @@
 # pptx_extractor.py
 # --------------------------------------------------------------------------
 # This file reads text out of a PowerPoint (.pptx) file, one slide at a time.
-# It uses the python-pptx library.
 #
-# IMPORTANT: python-pptx can only read the NEWER .pptx format.
-# It CANNOT read the old .ppt format.
+# It collects text from:
+#   - text boxes and titles
+#   - tables
+#   - grouped shapes / SmartArt (by looking inside groups)
+#   - PICTURES on the slide (by running OCR on them)
+#
+# IMPORTANT: python-pptx can only read the NEWER .pptx format, not old .ppt.
 # --------------------------------------------------------------------------
 
 import io
 from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from ocr import ocr_image_bytes
+
+
+def _collect_text_from_shapes(shapes, lines: list) -> None:
+    """
+    Go through a group of shapes and collect their text into `lines`.
+    Handles groups (by going inside them) and pictures (by OCR).
+    """
+    for shape in shapes:
+
+        # If this shape is a group, dig into the shapes inside it.
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            _collect_text_from_shapes(shape.shapes, lines)
+            continue
+
+        # Normal text boxes / titles.
+        if shape.has_text_frame:
+            text = shape.text_frame.text
+            if text and text.strip():
+                lines.append(text.strip())
+
+        # Tables.
+        if shape.has_table:
+            for row in shape.table.rows:
+                cells = [cell.text.strip() for cell in row.cells]
+                row_text = " | ".join(c for c in cells if c)
+                if row_text:
+                    lines.append(row_text)
+
+        # Pictures: run OCR so we can read text that lives inside images.
+        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            try:
+                image_bytes = shape.image.blob
+                ocr_text = ocr_image_bytes(image_bytes)
+                if ocr_text:
+                    lines.append(ocr_text)
+            except Exception:
+                # If a picture can't be read, just skip it quietly.
+                pass
 
 
 def extract_text_from_pptx(file_bytes: bytes) -> list:
     """
     Read every slide in a .pptx file and pull out its text.
-
-    Parameter:
-        file_bytes : the raw bytes of the uploaded file.
 
     Returns:
         A list of dictionaries, one per slide, like:
@@ -25,28 +66,9 @@ def extract_text_from_pptx(file_bytes: bytes) -> list:
     presentation = Presentation(io.BytesIO(file_bytes))
 
     slides_data = []
-
-    # Loop over every slide. enumerate(..., start=1) gives us slide numbers.
     for slide_number, slide in enumerate(presentation.slides, start=1):
         lines = []
-
-        # Each slide is made of "shapes" (text boxes, titles, tables, etc.)
-        for shape in slide.shapes:
-
-            # 1) Normal text boxes / titles
-            if shape.has_text_frame:
-                text = shape.text_frame.text
-                if text and text.strip():
-                    lines.append(text.strip())
-
-            # 2) Tables (slides often contain tables of data)
-            if shape.has_table:
-                for row in shape.table.rows:
-                    cells = [cell.text.strip() for cell in row.cells]
-                    row_text = " | ".join(c for c in cells if c)
-                    if row_text:
-                        lines.append(row_text)
-
+        _collect_text_from_shapes(slide.shapes, lines)
         slides_data.append({
             "number": slide_number,
             "text": "\n".join(lines),
