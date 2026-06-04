@@ -17,7 +17,7 @@ from prompts import (
     notes_prompt,
     summary_prompt,
     questions_prompt,
-    mcq_prompt,
+    case_scenario_prompt,
 )
 
 # File types we can read. We now support BOTH PowerPoint and PDF.
@@ -28,7 +28,7 @@ TASK_TO_PROMPT = {
     "Detailed Notes": notes_prompt,
     "Short Summary": summary_prompt,
     "Exam Questions": questions_prompt,
-    "MCQs with Answers": mcq_prompt,
+    "Solved Case Scenarios": case_scenario_prompt,
 }
 
 
