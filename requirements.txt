@@ -1,4 +1,6 @@
 streamlit
 python-pptx
-pypdf
+pymupdf
+pytesseract
+Pillow
 huggingface_hub
