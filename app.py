@@ -22,8 +22,10 @@ from ai_engine import is_ai_ready, MODEL_NAME
 st.set_page_config(page_title="AI Notes Generator", page_icon="📝")
 st.title("📝 AI Notes Generator")
 st.write(
-    "Upload a PowerPoint (.pptx) or PDF file and turn it into study notes, "
-    "summaries, exam questions, or MCQs, all powered by a free AI model."
+    "Upload a PowerPoint (.pptx), PDF, or image file and turn it into study "
+    "notes, summaries, exam questions, or solved case scenarios, all powered "
+    "by a free AI model. Scanned files and pictures are read automatically "
+    "using OCR."
 )
 
 # Streamlit re-runs the whole script on every click, so we use session_state
@@ -54,8 +56,8 @@ with st.sidebar:
 # ----------------------------- FILE UPLOAD -------------------------------
 
 uploaded_file = st.file_uploader(
-    "Upload your file (.pptx or .pdf)",
-    type=["pptx", "pdf", "ppt"],   # .ppt is allowed so we can show a helpful message
+    "Upload your file (.pptx, .pdf, or an image)",
+    type=["pptx", "pdf", "png", "jpg", "jpeg", "webp", "bmp", "tiff", "ppt"],
 )
 
 # ERROR CASE 1: No file uploaded yet.
@@ -68,7 +70,8 @@ if not is_supported(uploaded_file.name):
     file_type = detect_file_type(uploaded_file.name)
     st.error(
         f"Sorry, the file type '{file_type}' is not supported. "
-        "This app can read **.pptx** (PowerPoint) and **.pdf** files.\n\n"
+        "This app can read **.pptx** (PowerPoint), **.pdf**, and image "
+        "files (.png, .jpg, etc.).\n\n"
         "If you have an old **.ppt** file, open it in PowerPoint or "
         "Google Slides and save it as **.pptx**, then upload again."
     )
@@ -79,8 +82,10 @@ if not is_supported(uploaded_file.name):
 
 try:
     file_bytes = uploaded_file.getvalue()
-    # The agent decides which extractor to use based on the file type.
-    items, combined_text, label = extract_content(uploaded_file.name, file_bytes)
+    # The agent decides which reader to use based on the file type.
+    # For scanned files or images this runs OCR, which can take a moment.
+    with st.spinner("Reading your file... (scanned files use OCR and may take a little longer)"):
+        items, combined_text, label = extract_content(uploaded_file.name, file_bytes)
 except Exception as error:
     st.error(
         "Something went wrong while reading the file. "
@@ -92,9 +97,9 @@ except Exception as error:
 # ERROR CASE 3: The file opened fine but contained no readable text.
 if not combined_text.strip():
     st.warning(
-        "We opened the file but found **no readable text**. "
-        "It may contain only images or be a scanned document. "
-        "Try a file that has real text."
+        "We read the file but couldn't find any text, even with OCR. "
+        "This can happen if the image is blurry, very low quality, or "
+        "handwritten. Try a clearer file."
     )
     st.stop()
 
