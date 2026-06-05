@@ -1,5 +1,8 @@
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 import streamlit as st
-
 # Import our own helper files.
 from agent import (
     is_supported,
@@ -181,7 +184,42 @@ if generate_clicked:
         )
         st.stop()
 
+def create_pdf(title, content):
+    buffer = BytesIO()
 
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40,
+    )
+
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph(title, styles["Title"]))
+    story.append(Spacer(1, 16))
+
+    for line in content.split("\n"):
+        line = line.strip()
+
+        if not line:
+            story.append(Spacer(1, 8))
+        elif line.startswith("#"):
+            heading = line.replace("#", "").strip()
+            story.append(Paragraph(heading, styles["Heading2"]))
+            story.append(Spacer(1, 8))
+        elif line.startswith("-") or line.startswith("•"):
+            story.append(Paragraph(f"• {line.lstrip('-•').strip()}", styles["BodyText"]))
+        else:
+            story.append(Paragraph(line, styles["BodyText"]))
+            story.append(Spacer(1, 5))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
 # --------------------------- SHOW + DOWNLOAD RESULT ----------------------
 
 if st.session_state.result:
@@ -190,11 +228,16 @@ if st.session_state.result:
     st.write(st.session_state.result)
 
     safe_label = st.session_state.result_label.replace(" ", "_")
-    file_name = f"{safe_label}.txt"
+    file_name = f"{safe_label}.pdf"
+
+    pdf_file = create_pdf(
+        st.session_state.result_label,
+        st.session_state.result,
+    )
 
     st.download_button(
-        label="⬇️ Download as TXT",
-        data=st.session_state.result,
+        label="⬇️ Download as PDF",
+        data=pdf_file,
         file_name=file_name,
-        mime="text/plain",
+        mime="application/pdf",
     )
