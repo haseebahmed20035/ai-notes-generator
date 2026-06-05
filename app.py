@@ -1,9 +1,3 @@
-# app.py  (Hugging Face hosted version - now supports PPTX and PDF)
-# --------------------------------------------------------------------------
-# This is the MAIN file the Space runs. It builds the Streamlit interface
-# and ties everything together. The AI runs on Hugging Face's servers.
-# --------------------------------------------------------------------------
-
 import streamlit as st
 
 # Import our own helper files.
@@ -23,13 +17,10 @@ st.set_page_config(page_title="AI Notes Generator", page_icon="📝")
 st.title("📝 AI Notes Generator")
 st.write(
     "Upload a PowerPoint (.pptx), PDF, or image file and turn it into study "
-    "notes, summaries, exam questions, or solved case scenarios, all powered "
-    "by a free AI model. Scanned files and pictures are read automatically "
+    "notes, summaries, exam questions, or solved case scenarios. Scanned files and pictures are read automatically "
     "using OCR."
 )
 
-# Streamlit re-runs the whole script on every click, so we use session_state
-# to remember things across re-runs.
 if "content_text" not in st.session_state:
     st.session_state.content_text = ""
 if "result" not in st.session_state:
