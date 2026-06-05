@@ -10,8 +10,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          lfs: true
 
       - name: Push to Hugging Face
         env:
@@ -20,6 +18,8 @@ jobs:
           git clone https://haseebahmed2003:$HF_TOKEN@huggingface.co/spaces/haseebahmed2003/ai-notes-generator hf-space
           rsync -av --exclude='.git' --exclude='hf-space' ./ hf-space/
           cd hf-space
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
           git add .
           git commit -m "Sync from GitHub" || echo "No changes"
           git push
