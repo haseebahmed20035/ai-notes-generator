@@ -144,8 +144,16 @@ if generate_clicked:
         st.stop()
 
     try:
-        with st.spinner(f"Generating {task_name}... this can take a moment."):
-            result = run_task(task_name, st.session_state.content_text)
+        progress = st.progress(0.0, text="Starting...")
+
+        def on_progress(current, total):
+            progress.progress(
+                current / total,
+                text=f"Generating {task_name}... part {current} of {total}",
+            )
+
+        result = run_task(task_name, st.session_state.content_text, on_progress)
+        progress.empty()
 
         st.session_state.result = result
         st.session_state.result_label = task_name
