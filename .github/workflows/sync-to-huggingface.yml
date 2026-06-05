@@ -1,0 +1,21 @@
+name: Sync to Hugging Face Space
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-to-hub:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Push to Hugging Face
+        uses: huggingface/hub-sync@v0.1.2
+        with:
+          repo_type: space
+          huggingface_repo_id: haseebahmed2003/ai-notes-generator
+          hf_token: ${{ secrets.HF_TOKEN }}
