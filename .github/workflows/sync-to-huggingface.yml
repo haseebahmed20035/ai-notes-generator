@@ -12,6 +12,7 @@ jobs:
       - name: Checkout GitHub repo
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           lfs: true
 
       - name: Push to Hugging Face Space
@@ -23,5 +24,9 @@ jobs:
 
           git remote remove hf || true
           git remote add hf https://haseebahmed2003:$HF_TOKEN@huggingface.co/spaces/haseebahmed2003/ai-notes-generator
+
+          git fetch --unshallow || true
+          git lfs install
+          git lfs pull || true
 
           git push hf main:main --force
