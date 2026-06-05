@@ -6,6 +6,9 @@
 #   PERCEIVE : look at the uploaded file (what type is it?)
 #   DECIDE   : choose which reader to use, and which AI task to run
 #   ACT      : run the extraction and the chosen AI task
+#
+# For LARGE files, the agent breaks the text into smaller parts ("chunks")
+# and runs the AI on each part, so nothing gets skipped.
 # --------------------------------------------------------------------------
 
 import os
@@ -35,6 +38,10 @@ TASK_TO_PROMPT = {
     "Solved Case Scenarios": case_scenario_prompt,
 }
 
+# How big each "chunk" of text can be (in characters) before we split it.
+# Smaller = more thorough but more AI calls; larger = fewer calls but may skip.
+MAX_CHARS_PER_CHUNK = 8000
+
 
 # ---------------------------- PERCEIVE -----------------------------------
 
@@ -57,7 +64,7 @@ def extract_content(filename: str, file_bytes: bytes) -> tuple:
 
     Returns:
         items        : list of {"number": int, "text": str}
-        combined_text: all the text joined into one string for the AI
+        combined_text: all the text joined into one string
         label        : "Slide", "Page", or "Image"
     """
     extension = detect_file_type(filename)
@@ -79,7 +86,7 @@ def extract_content(filename: str, file_bytes: bytes) -> tuple:
 
 
 def combine_items_text(items: list, label: str) -> str:
-    """Join all slides/pages/images into ONE string to send to the AI."""
+    """Join all slides/pages/images into ONE string."""
     parts = []
     for item in items:
         if item["text"]:
@@ -87,12 +94,84 @@ def combine_items_text(items: list, label: str) -> str:
     return "\n\n".join(parts)
 
 
+# --------------------------- CHUNKING (for large files) ------------------
+
+def split_into_chunks(text: str, max_chars: int = MAX_CHARS_PER_CHUNK) -> list:
+    """
+    Split the text into smaller chunks without breaking slides/pages apart.
+
+    We split on the blank lines between slides/pages, then fill each chunk
+    up to about `max_chars` characters.
+    """
+    blocks = text.split("\n\n")
+    chunks = []
+    current = ""
+
+    for block in blocks:
+        # If adding this block would make the chunk too big, start a new one.
+        if current and (len(current) + len(block) + 2) > max_chars:
+            chunks.append(current)
+            current = block
+        else:
+            current = block if not current else current + "\n\n" + block
+
+    if current:
+        chunks.append(current)
+
+    return chunks
+
+
 # --------------------------- DECIDE + ACT (AI task) ----------------------
 
-def run_task(task_name: str, content_text: str) -> str:
-    """The agent picks the right prompt for the task, then asks the AI."""
+def _run_single(task_name: str, text: str) -> str:
+    """Run one AI task on one piece of text."""
     prompt_builder = TASK_TO_PROMPT.get(task_name)
     if prompt_builder is None:
         raise ValueError(f"Unknown task: '{task_name}'.")
-    prompt = prompt_builder(content_text)
-    return ask_ai(prompt)
+    return ask_ai(prompt_builder(text))
+
+
+def run_task(task_name: str, content_text: str, on_progress=None) -> str:
+    """
+    Run the chosen AI task on the content.
+
+    For small content, this is a single AI call.
+    For large content, it splits into chunks, runs each one, and combines
+    them, so big documents get covered fully instead of being skipped.
+
+    Parameter:
+        on_progress : optional function called as on_progress(current, total)
+                      so the app can show a progress bar.
+    """
+    chunks = split_into_chunks(content_text)
+
+    # Small file: just one call, like before.
+    if len(chunks) <= 1:
+        if on_progress:
+            on_progress(1, 1)
+        return _run_single(task_name, content_text)
+
+    # Large file: process each chunk, then combine.
+    parts = []
+    total = len(chunks)
+    for index, chunk in enumerate(chunks, start=1):
+        if on_progress:
+            on_progress(index, total)
+        try:
+            result = _run_single(task_name, chunk)
+            parts.append(result)
+        except Exception as error:
+            # If one part fails (e.g. rate limit), keep the rest.
+            parts.append(f"[Part {index} could not be generated: {error}]")
+
+    combined = "\n\n".join(parts)
+
+    # A "Short Summary" should stay short, so condense the combined parts
+    # into one final summary.
+    if task_name == "Short Summary":
+        try:
+            return _run_single("Short Summary", combined)
+        except Exception:
+            return combined
+
+    return combined
