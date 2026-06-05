@@ -1,243 +1,126 @@
-from io import BytesIO
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-import streamlit as st
-# Import our own helper files.
-from agent import (
-    is_supported,
-    detect_file_type,
-    extract_content,
-    run_task,
-    TASK_TO_PROMPT,
-)
-from ai_engine import is_ai_ready, MODEL_NAME
+import os
 
-
-# ----------------------------- PAGE SETUP --------------------------------
-
-st.set_page_config(page_title="AI Notes Generator", page_icon="📝")
-
-st.title("📝 AI Notes Generator")
-
-st.write(
-    "Upload a PowerPoint (.pptx), PDF, or image file and turn it into study "
-    "notes, summaries, exam questions, or solved case scenarios. Scanned files "
-    "and pictures are read automatically using OCR."
+from ai_engine import ask_ai
+from pptx_extractor import extract_text_from_pptx
+from pdf_extractor import extract_text_from_pdf
+from image_extractor import extract_text_from_image
+from prompts import (
+    notes_prompt,
+    summary_prompt,
+    questions_prompt,
+    case_scenario_prompt,
 )
 
-if "content_text" not in st.session_state:
-    st.session_state.content_text = ""
+PPTX_EXTENSIONS = (".pptx",)
+PDF_EXTENSIONS = (".pdf",)
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff")
+SUPPORTED_EXTENSIONS = PPTX_EXTENSIONS + PDF_EXTENSIONS + IMAGE_EXTENSIONS
 
-if "result" not in st.session_state:
-    st.session_state.result = ""
+TASK_TO_PROMPT = {
+    "Detailed Notes": notes_prompt,
+    "Short Summary": summary_prompt,
+    "Exam Questions": questions_prompt,
+    "Solved Case Scenarios": case_scenario_prompt,
+}
 
-if "result_label" not in st.session_state:
-    st.session_state.result_label = ""
-
-
-# --------------------------- CACHE FUNCTION ------------------------------
-
-@st.cache_data(show_spinner=False)
-def cached_extract_content(filename, file_bytes):
-    return extract_content(filename, file_bytes)
+MAX_CHARS_PER_CHUNK = 14000
 
 
-# --------------------------- SIDEBAR: STATUS -----------------------------
+def detect_file_type(filename: str) -> str:
+    _, extension = os.path.splitext(filename)
+    return extension.lower()
 
-with st.sidebar:
-    st.header("⚙️ Status")
 
-    ready, error = is_ai_ready()
+def is_supported(filename: str) -> bool:
+    return detect_file_type(filename) in SUPPORTED_EXTENSIONS
 
-    if ready:
-        st.success(f"AI is ready. Model: {MODEL_NAME}")
+
+def extract_content(filename: str, file_bytes: bytes, enable_ocr: bool = True) -> tuple:
+    extension = detect_file_type(filename)
+
+    if extension in PPTX_EXTENSIONS:
+        items = extract_text_from_pptx(file_bytes, enable_ocr=enable_ocr)
+        label = "Slide"
+
+    elif extension in PDF_EXTENSIONS:
+        items = extract_text_from_pdf(file_bytes, enable_ocr=enable_ocr)
+        label = "Page"
+
+    elif extension in IMAGE_EXTENSIONS:
+        items = extract_text_from_image(file_bytes)
+        label = "Image"
+
     else:
-        st.error("AI token is missing.")
-        st.caption(
-            "Add your Hugging Face token as a Secret named HF_TOKEN "
-            "in this Space's Settings."
-        )
+        raise ValueError(f"Cannot extract from file type '{extension}'.")
+
+    combined_text = combine_items_text(items, label)
+    return items, combined_text, label
 
 
-# ----------------------------- FILE UPLOAD -------------------------------
+def combine_items_text(items: list, label: str) -> str:
+    parts = []
 
-uploaded_file = st.file_uploader(
-    "Upload your file (.pptx, .pdf, or an image)",
-    type=["pptx", "pdf", "png", "jpg", "jpeg", "webp", "bmp", "tiff", "ppt"],
-)
-
-if uploaded_file is None:
-    st.info("👆 Please upload a .pptx, .pdf, or image file to get started.")
-    st.stop()
-
-if not is_supported(uploaded_file.name):
-    file_type = detect_file_type(uploaded_file.name)
-
-    st.error(
-        f"Sorry, the file type '{file_type}' is not supported. "
-        "This app can read **.pptx** PowerPoint, **.pdf**, and image "
-        "files like .png, .jpg, .jpeg, .webp, .bmp, and .tiff.\n\n"
-        "If you have an old **.ppt** file, open it in PowerPoint or "
-        "Google Slides and save it as **.pptx**, then upload again."
-    )
-    st.stop()
-
-
-# --------------------------- EXTRACT THE TEXT ----------------------------
-
-try:
-    file_bytes = uploaded_file.getvalue()
-
-    with st.spinner("Reading your file..."):
-        items, combined_text, label = cached_extract_content(
-            uploaded_file.name,
-            file_bytes,
-        )
-
-except Exception as error:
-    st.error(
-        "Something went wrong while reading the file. "
-        "It may be corrupted or not a real .pptx / .pdf / image file.\n\n"
-        f"Technical detail: {error}"
-    )
-    st.stop()
-
-
-if not combined_text.strip():
-    st.warning(
-        "We read the file but couldn't find any text, even with OCR. "
-        "This can happen if the image is blurry, very low quality, or "
-        "handwritten. Try a clearer file."
-    )
-    st.stop()
-
-st.session_state.content_text = combined_text
-
-st.success(f"✅ Extracted text from {len(items)} {label.lower()}(s).")
-
-
-# --------------------------- SHOW EXTRACTED TEXT -------------------------
-
-with st.expander(f"🔍 View extracted {label.lower()} text"):
     for item in items:
-        st.markdown(f"**{label} {item['number']}**")
-
         if item["text"]:
-            st.write(item["text"])
+            parts.append(f"--- {label} {item['number']} ---\n{item['text']}")
+
+    return "\n\n".join(parts)
+
+
+def split_into_chunks(text: str, max_chars: int = MAX_CHARS_PER_CHUNK) -> list:
+    blocks = text.split("\n\n")
+    chunks = []
+    current = ""
+
+    for block in blocks:
+        if current and (len(current) + len(block) + 2) > max_chars:
+            chunks.append(current)
+            current = block
         else:
-            st.caption(f"(no text on this {label.lower()})")
+            current = block if not current else current + "\n\n" + block
 
-        st.divider()
+    if current:
+        chunks.append(current)
 
-
-# ----------------------------- CHOOSE A TASK -----------------------------
-
-st.subheader("What would you like to generate?")
-
-task_name = st.radio(
-    "Choose one:",
-    options=list(TASK_TO_PROMPT.keys()),
-    horizontal=False,
-)
-
-generate_clicked = st.button("🚀 Generate", type="primary")
+    return chunks
 
 
-# ----------------------------- RUN THE AGENT -----------------------------
+def _run_single(task_name: str, text: str) -> str:
+    prompt_builder = TASK_TO_PROMPT.get(task_name)
 
-if generate_clicked:
-    ready, error = is_ai_ready()
+    if prompt_builder is None:
+        raise ValueError(f"Unknown task: '{task_name}'.")
 
-    if not ready:
-        st.error(
-            "Cannot reach the AI model because the HF_TOKEN secret is missing. "
-            "Add it in this Space's Settings and try again."
-        )
-        st.stop()
+    return ask_ai(prompt_builder(text))
 
-    try:
-        progress = st.progress(0.0, text="Starting...")
 
-        def on_progress(current, total):
-            progress.progress(
-                current / total,
-                text=f"Generating {task_name}... part {current} of {total}",
-            )
+def run_task(task_name: str, content_text: str, on_progress=None) -> str:
+    chunks = split_into_chunks(content_text)
 
-        result = run_task(
-            task_name,
-            st.session_state.content_text,
-            on_progress,
-        )
+    if len(chunks) <= 1:
+        if on_progress:
+            on_progress(1, 1)
+        return _run_single(task_name, content_text)
 
-        progress.empty()
+    parts = []
+    total = len(chunks)
 
-        st.session_state.result = result
-        st.session_state.result_label = task_name
+    for index, chunk in enumerate(chunks, start=1):
+        if on_progress:
+            on_progress(index, total)
 
-    except Exception as error:
-        st.error(
-            "The AI was unable to generate a response. "
-            "Please try again in a moment.\n\n"
-            f"Technical detail: {error}"
-        )
-        st.stop()
+        try:
+            result = _run_single(task_name, chunk)
+            parts.append(result)
+        except Exception as error:
+            parts.append(f"[Part {index} could not be generated: {error}]")
 
-def create_pdf(title, content):
-    buffer = BytesIO()
+    combined = "\n\n".join(parts)
 
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40,
-    )
+    if task_name == "Short Summary":
+        try:
+            return _run_single("Short Summary", combined)
+        except Exception:
+            return combined
 
-    styles = getSampleStyleSheet()
-    story = []
-
-    story.append(Paragraph(title, styles["Title"]))
-    story.append(Spacer(1, 16))
-
-    for line in content.split("\n"):
-        line = line.strip()
-
-        if not line:
-            story.append(Spacer(1, 8))
-        elif line.startswith("#"):
-            heading = line.replace("#", "").strip()
-            story.append(Paragraph(heading, styles["Heading2"]))
-            story.append(Spacer(1, 8))
-        elif line.startswith("-") or line.startswith("•"):
-            story.append(Paragraph(f"• {line.lstrip('-•').strip()}", styles["BodyText"]))
-        else:
-            story.append(Paragraph(line, styles["BodyText"]))
-            story.append(Spacer(1, 5))
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-# --------------------------- SHOW + DOWNLOAD RESULT ----------------------
-
-if st.session_state.result:
-    st.subheader(f"📄 {st.session_state.result_label}")
-
-    st.write(st.session_state.result)
-
-    safe_label = st.session_state.result_label.replace(" ", "_")
-    file_name = f"{safe_label}.pdf"
-
-    pdf_file = create_pdf(
-        st.session_state.result_label,
-        st.session_state.result,
-    )
-
-    st.download_button(
-        label="⬇️ Download as PDF",
-        data=pdf_file,
-        file_name=file_name,
-        mime="application/pdf",
-    )
+    return combined

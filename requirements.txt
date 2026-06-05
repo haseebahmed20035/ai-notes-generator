@@ -1,7 +1,8 @@
 streamlit
 python-pptx
-pymupdf
+PyMuPDF
+pillow
 pytesseract
-Pillow
-huggingface_hub
 reportlab
+transformers
+torch

@@ -38,8 +38,7 @@ TASK_TO_PROMPT = {
     "Solved Case Scenarios": case_scenario_prompt,
 }
 
-# How big each "chunk" of text can be (in characters) before we split it.
-# Smaller = more thorough but more AI calls; larger = fewer calls but may skip.
+# How big each "chunk" of text can be before we split it.
 MAX_CHARS_PER_CHUNK = 14000
 
 
@@ -58,9 +57,18 @@ def is_supported(filename: str) -> bool:
 
 # --------------------------- DECIDE + ACT (extraction) -------------------
 
-def extract_content(filename: str, file_bytes: bytes) -> tuple:
+def extract_content(
+    filename: str,
+    file_bytes: bytes,
+    enable_ocr: bool = True,
+) -> tuple:
     """
     The agent looks at the file type and DECIDES which reader to use.
+
+    Parameter:
+        enable_ocr:
+            True  = also read text inside images/scanned pages
+            False = only read normal selectable text, faster
 
     Returns:
         items        : list of {"number": int, "text": str}
@@ -70,14 +78,24 @@ def extract_content(filename: str, file_bytes: bytes) -> tuple:
     extension = detect_file_type(filename)
 
     if extension in PPTX_EXTENSIONS:
-        items = extract_text_from_pptx(file_bytes)
+        items = extract_text_from_pptx(
+            file_bytes,
+            enable_ocr=enable_ocr,
+        )
         label = "Slide"
+
     elif extension in PDF_EXTENSIONS:
-        items = extract_text_from_pdf(file_bytes)
+        items = extract_text_from_pdf(
+            file_bytes,
+            enable_ocr=enable_ocr,
+        )
         label = "Page"
+
     elif extension in IMAGE_EXTENSIONS:
+        # Image files always need OCR because image has no selectable text.
         items = extract_text_from_image(file_bytes)
         label = "Image"
+
     else:
         raise ValueError(f"Cannot extract from file type '{extension}'.")
 
@@ -88,9 +106,11 @@ def extract_content(filename: str, file_bytes: bytes) -> tuple:
 def combine_items_text(items: list, label: str) -> str:
     """Join all slides/pages/images into ONE string."""
     parts = []
+
     for item in items:
         if item["text"]:
             parts.append(f"--- {label} {item['number']} ---\n{item['text']}")
+
     return "\n\n".join(parts)
 
 
@@ -99,16 +119,12 @@ def combine_items_text(items: list, label: str) -> str:
 def split_into_chunks(text: str, max_chars: int = MAX_CHARS_PER_CHUNK) -> list:
     """
     Split the text into smaller chunks without breaking slides/pages apart.
-
-    We split on the blank lines between slides/pages, then fill each chunk
-    up to about `max_chars` characters.
     """
     blocks = text.split("\n\n")
     chunks = []
     current = ""
 
     for block in blocks:
-        # If adding this block would make the chunk too big, start a new one.
         if current and (len(current) + len(block) + 2) > max_chars:
             chunks.append(current)
             current = block
@@ -126,8 +142,10 @@ def split_into_chunks(text: str, max_chars: int = MAX_CHARS_PER_CHUNK) -> list:
 def _run_single(task_name: str, text: str) -> str:
     """Run one AI task on one piece of text."""
     prompt_builder = TASK_TO_PROMPT.get(task_name)
+
     if prompt_builder is None:
         raise ValueError(f"Unknown task: '{task_name}'.")
+
     return ask_ai(prompt_builder(text))
 
 
@@ -136,38 +154,32 @@ def run_task(task_name: str, content_text: str, on_progress=None) -> str:
     Run the chosen AI task on the content.
 
     For small content, this is a single AI call.
-    For large content, it splits into chunks, runs each one, and combines
-    them, so big documents get covered fully instead of being skipped.
-
-    Parameter:
-        on_progress : optional function called as on_progress(current, total)
-                      so the app can show a progress bar.
+    For large content, it splits into chunks, runs each one, and combines them.
     """
     chunks = split_into_chunks(content_text)
 
-    # Small file: just one call, like before.
     if len(chunks) <= 1:
         if on_progress:
             on_progress(1, 1)
+
         return _run_single(task_name, content_text)
 
-    # Large file: process each chunk, then combine.
     parts = []
     total = len(chunks)
+
     for index, chunk in enumerate(chunks, start=1):
         if on_progress:
             on_progress(index, total)
+
         try:
             result = _run_single(task_name, chunk)
             parts.append(result)
+
         except Exception as error:
-            # If one part fails (e.g. rate limit), keep the rest.
             parts.append(f"[Part {index} could not be generated: {error}]")
 
     combined = "\n\n".join(parts)
 
-    # A "Short Summary" should stay short, so condense the combined parts
-    # into one final summary.
     if task_name == "Short Summary":
         try:
             return _run_single("Short Summary", combined)

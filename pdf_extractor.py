@@ -2,28 +2,65 @@ import fitz
 from ocr import ocr_image_bytes
 
 
-OCR_DPI = 120
+OCR_DPI = 110
+MIN_IMAGE_WIDTH = 200
+MIN_IMAGE_HEIGHT = 200
 
 
-def extract_text_from_pdf(file_bytes: bytes) -> list:
+def extract_text_from_pdf(file_bytes: bytes, enable_ocr: bool = True) -> list:
     pages_data = []
 
     with fitz.open(stream=file_bytes, filetype="pdf") as document:
-        total_pages = len(document)
-
         for page_number, page in enumerate(document, start=1):
-            text = (page.get_text() or "").strip()
+            parts = []
 
-            # OCR only if page has no selectable text
-            if not text:
-                pixmap = page.get_pixmap(dpi=OCR_DPI)
-                image_bytes = pixmap.tobytes("png")
-                text = ocr_image_bytes(image_bytes)
+            # 1. Fast normal/selectable text
+            normal_text = (page.get_text() or "").strip()
+
+            if normal_text:
+                parts.append(normal_text)
+
+            # 2. OCR large images inside page
+            if enable_ocr:
+                for image_info in page.get_images(full=True):
+                    try:
+                        xref = image_info[0]
+                        image_data = document.extract_image(xref)
+                        image_bytes = image_data["image"]
+
+                        width = image_data.get("width", 0)
+                        height = image_data.get("height", 0)
+
+                        # Skip small icons/logos
+                        if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
+                            continue
+
+                        image_text = ocr_image_bytes(image_bytes)
+
+                        if image_text:
+                            parts.append("[Image OCR]\n" + image_text)
+
+                    except Exception:
+                        pass
+
+            # 3. If page is fully scanned, OCR full page
+            if not normal_text and enable_ocr:
+                try:
+                    pixmap = page.get_pixmap(dpi=OCR_DPI)
+                    image_bytes = pixmap.tobytes("png")
+
+                    scanned_text = ocr_image_bytes(image_bytes)
+
+                    if scanned_text:
+                        parts.append(scanned_text)
+
+                except Exception:
+                    pass
 
             pages_data.append(
                 {
                     "number": page_number,
-                    "text": text,
+                    "text": "\n\n".join(parts).strip(),
                 }
             )
 
