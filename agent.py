@@ -40,7 +40,7 @@ TASK_TO_PROMPT = {
 
 # How big each "chunk" of text can be (in characters) before we split it.
 # Smaller = more thorough but more AI calls; larger = fewer calls but may skip.
-MAX_CHARS_PER_CHUNK = 8000
+MAX_CHARS_PER_CHUNK = 14000
 
 
 # ---------------------------- PERCEIVE -----------------------------------

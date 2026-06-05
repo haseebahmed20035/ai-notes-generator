@@ -41,7 +41,7 @@ def is_ai_ready() -> tuple:
     return True, None
 
 
-def ask_ai(prompt: str, model: str = MODEL_NAME, max_tokens: int = 2048) -> str:
+def ask_ai(prompt: str, model: str = MODEL_NAME, max_tokens: int = 1200) -> str:
     """
     Send a prompt to the hosted AI model and return its text answer.
 
