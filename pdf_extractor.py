@@ -1,61 +1,47 @@
-import fitz
+# pdf_extractor.py
+# --------------------------------------------------------------------------
+# This file reads text out of a PDF, one page at a time.
+#
+# It is smart about it:
+#   1. First it tries to grab the real text from the page.
+#   2. If the page has NO real text (a scanned / image page), it turns the
+#      page into an image and runs OCR on it.
+#
+# It uses PyMuPDF (imported as "fitz") which is fast and reliable.
+# --------------------------------------------------------------------------
+
+import fitz  # PyMuPDF
 from ocr import ocr_image_bytes
 
 
-OCR_DPI = 110
-MIN_IMAGE_WIDTH = 200
-MIN_IMAGE_HEIGHT = 200
+def extract_text_from_pdf(file_bytes: bytes) -> list:
+    """
+    Read every page in a PDF and pull out its text (using OCR if needed).
 
-
-def extract_text_from_pdf(file_bytes: bytes, enable_ocr: bool = True) -> list:
+    Returns:
+        A list of dictionaries, one per page, like:
+        [{"number": 1, "text": "..."}, {"number": 2, "text": "..."}]
+    """
     pages_data = []
 
+    # Open the PDF straight from the uploaded bytes.
     with fitz.open(stream=file_bytes, filetype="pdf") as document:
+
         for page_number, page in enumerate(document, start=1):
-            parts = []
 
-            normal_text = (page.get_text() or "").strip()
+            # STEP 1: try to read the real text on the page.
+            text = (page.get_text() or "").strip()
 
-            if normal_text:
-                parts.append(normal_text)
-
-            if enable_ocr:
-                for image_info in page.get_images(full=True):
-                    try:
-                        xref = image_info[0]
-                        image_data = document.extract_image(xref)
-                        image_bytes = image_data["image"]
-
-                        width = image_data.get("width", 0)
-                        height = image_data.get("height", 0)
-
-                        if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
-                            continue
-
-                        image_text = ocr_image_bytes(image_bytes)
-
-                        if image_text:
-                            parts.append("[Image OCR]\n" + image_text)
-
-                    except Exception:
-                        pass
-
-            if not normal_text and enable_ocr and not parts:
-                try:
-                    pixmap = page.get_pixmap(dpi=OCR_DPI)
-                    image_bytes = pixmap.tobytes("png")
-
-                    scanned_text = ocr_image_bytes(image_bytes)
-
-                    if scanned_text:
-                        parts.append(scanned_text)
-
-                except Exception:
-                    pass
+            # STEP 2: if there's no real text, the page is an image, so OCR it.
+            if not text:
+                # Render the page to a picture at a readable resolution.
+                pixmap = page.get_pixmap(dpi=200)
+                image_bytes = pixmap.tobytes("png")
+                text = ocr_image_bytes(image_bytes)
 
             pages_data.append({
                 "number": page_number,
-                "text": "\n\n".join(parts).strip(),
+                "text": text,
             })
 
     return pages_data
