@@ -41,7 +41,7 @@ def is_ai_ready() -> tuple:
     return True, None
 
 
-def ask_ai(prompt: str, model: str = MODEL_NAME) -> str:
+def ask_ai(prompt: str, model: str = MODEL_NAME, max_tokens: int = 2048) -> str:
     """
     Send a prompt to the hosted AI model and return its text answer.
 
@@ -55,7 +55,7 @@ def ask_ai(prompt: str, model: str = MODEL_NAME) -> str:
         completion = client.chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1500,   # roughly how long the answer can be
+            max_tokens=max_tokens,   # how long the answer can be
         )
 
         # The reply text lives inside choices[0].message.content.
