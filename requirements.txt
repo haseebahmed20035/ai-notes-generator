@@ -4,3 +4,4 @@ pymupdf
 pytesseract
 Pillow
 huggingface_hub
+reportlab
